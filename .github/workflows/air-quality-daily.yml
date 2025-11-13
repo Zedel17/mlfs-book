@@ -2,8 +2,8 @@ name: air-quality-daily
 
 on:
   workflow_dispatch:
-    #schedule:
-    #- cron: '11 6 * * *'
+  schedule:
+    - cron: '11 6 * * *'
 
 jobs:
   schedule_pipelines:
@@ -31,6 +31,7 @@ jobs:
       - name: execute python workflows from bash script
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          AQICN_API_KEY: ${{ secrets.AQICN_API_KEY }}
         run: |
           cd notebooks/ch03
           jupyter nbconvert --to notebook --execute 2_air_quality_feature_pipeline.ipynb
