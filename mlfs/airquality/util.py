@@ -169,6 +169,14 @@ def get_pm25(aqicn_url: str, country: str, city: str, street: str, day: datetime
     if data['status'] == 'ok':
         # Extract the air quality data
         aqi_data = data['data']
+
+        # Check if 'iaqi' exists in the response
+        if 'iaqi' not in aqi_data:
+            print(f"Warning: Sensor response missing 'iaqi' data. Response: {aqi_data}")
+            if 'status' in aqi_data and aqi_data['status'] == 'error':
+                print(f"Sensor error: {aqi_data.get('msg', 'Unknown error')}")
+            raise KeyError(f"Sensor data missing 'iaqi' key. Sensor may be offline or URL incorrect.")
+
         aq_today_df = pd.DataFrame()
         aq_today_df['pm25'] = [aqi_data['iaqi'].get('pm25', {}).get('v', None)]
         aq_today_df['pm25'] = aq_today_df['pm25'].astype('float32')
