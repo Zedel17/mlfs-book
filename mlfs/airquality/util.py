@@ -82,7 +82,8 @@ def get_hourly_weather_forecast(city, latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "hourly": ["temperature_2m", "precipitation", "wind_speed_10m", "wind_direction_10m", "relative_humidity_2m"]
+        "hourly": ["temperature_2m", "precipitation", "wind_speed_10m", "wind_direction_10m", "relative_humidity_2m"],
+        "forecast_days": 8  # Request 8 days to ensure we get at least 7 future days after filtering for 12:00
     }
     responses = openmeteo.weather_api(url, params=params)
 
@@ -197,9 +198,29 @@ def get_pm25(aqicn_url: str, country: str, city: str, street: str, day: datetime
 def plot_air_quality_forecast(city: str, street: str, df: pd.DataFrame, file_path: str, hindcast=False):
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    day = pd.to_datetime(df['date']).dt.date
-    # Plot each column separately in matplotlib
-    ax.plot(day, df['predicted_pm25'], label='Predicted PM2.5', color='red', linewidth=2, marker='o', markersize=5, markerfacecolor='blue')
+    # Convert dates to datetime for plotting
+    df_plot = df.copy()
+    df_plot['date'] = pd.to_datetime(df_plot['date'])
+
+    # Check if we have multiple sensors (street column exists and has multiple values)
+    has_multiple_sensors = 'street' in df_plot.columns and df_plot['street'].nunique() > 1
+
+    # Define colors for different sensors
+    sensor_colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown']
+
+    if has_multiple_sensors:
+        # Plot separate lines for each sensor
+        sensors = df_plot['street'].unique()
+        for i, sensor_name in enumerate(sensors):
+            sensor_data = df_plot[df_plot['street'] == sensor_name]
+            color = sensor_colors[i % len(sensor_colors)]
+            ax.plot(sensor_data['date'], sensor_data['predicted_pm25'],
+                   label=f'Predicted - {sensor_name}',
+                   color=color, linewidth=2, marker='o', markersize=4, linestyle='-')
+    else:
+        # Single line for aggregated or single sensor data
+        ax.plot(df_plot['date'], df_plot['predicted_pm25'],
+               label='Predicted PM2.5', color='red', linewidth=2, marker='o', markersize=5, markerfacecolor='blue')
 
     # Set the y-axis to a logarithmic scale
     ax.set_yscale('log')
@@ -212,25 +233,43 @@ def plot_air_quality_forecast(city: str, street: str, df: pd.DataFrame, file_pat
     ax.set_title(f"PM2.5 Predicted (Logarithmic Scale) for {city}, {street}")
     ax.set_ylabel('PM2.5')
 
-    colors = ['green', 'yellow', 'orange', 'red', 'purple', 'darkred']
-    labels = ['Good', 'Moderate', 'Unhealthy for Some', 'Unhealthy', 'Very Unhealthy', 'Hazardous']
+    # Air quality color bands
+    aq_colors = ['green', 'yellow', 'orange', 'red', 'purple', 'darkred']
+    aq_labels = ['Good', 'Moderate', 'Unhealthy for Some', 'Unhealthy', 'Very Unhealthy', 'Hazardous']
     ranges = [(0, 49), (50, 99), (100, 149), (150, 199), (200, 299), (300, 500)]
-    for color, (start, end) in zip(colors, ranges):
+    for color, (start, end) in zip(aq_colors, ranges):
         ax.axhspan(start, end, color=color, alpha=0.3)
 
     # Add a legend for the different Air Quality Categories
-    patches = [Patch(color=colors[i], label=f"{labels[i]}: {ranges[i][0]}-{ranges[i][1]}") for i in range(len(colors))]
+    patches = [Patch(color=aq_colors[i], label=f"{aq_labels[i]}: {ranges[i][0]}-{ranges[i][1]}") for i in range(len(aq_colors))]
     legend1 = ax.legend(handles=patches, loc='upper right', title="Air Quality Categories", fontsize='x-small')
 
-    # Aim for ~10 annotated values on x-axis, will work for both forecasts ans hindcasts
-    if len(df.index) > 11:
-        every_x_tick = len(df.index) / 10
-        ax.xaxis.set_major_locator(MultipleLocator(every_x_tick))
+    # Format x-axis to show dates properly with unique date labels
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+
+    # Set locator based on unique dates, not total rows
+    unique_dates = df_plot['date'].dt.date.nunique()
+    if unique_dates > 10:
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, unique_dates // 10)))
+    else:
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
 
     plt.xticks(rotation=45)
 
     if hindcast == True:
-        ax.plot(day, df['pm25'], label='Actual PM2.5', color='black', linewidth=2, marker='^', markersize=5, markerfacecolor='grey')
+        if has_multiple_sensors:
+            # Plot actual values for each sensor with dashed lines
+            for i, sensor_name in enumerate(sensors):
+                sensor_data = df_plot[df_plot['street'] == sensor_name]
+                color = sensor_colors[i % len(sensor_colors)]
+                ax.plot(sensor_data['date'], sensor_data['pm25'],
+                       label=f'Actual - {sensor_name}',
+                       color=color, linewidth=2, marker='^', markersize=4, linestyle='--', alpha=0.7)
+        else:
+            ax.plot(df_plot['date'], df_plot['pm25'],
+                   label='Actual PM2.5', color='black', linewidth=2, marker='^', markersize=5, markerfacecolor='grey')
+
         legend2 = ax.legend(loc='upper left', fontsize='x-small')
         ax.add_artist(legend1)
 
